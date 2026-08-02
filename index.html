@@ -281,6 +281,7 @@ const CATS = {
 const INCS = {
   nomina:     { label:'Nómina',         color:'#4ECFA8' },
   ventas:     { label:'Ventas',         color:'#4EA8DE' },
+  alquileres: { label:'Alquileres',     color:'#E8B14A' },
   reembolso:  { label:'Reembolsos',     color:'#9BD46A' },
   extra:      { label:'Otros ingresos', color:'#8397A4' }
 };
@@ -298,7 +299,17 @@ const KEYWORDS = {
 const INC_KEYWORDS = {
   nomina:     ['nomina','sueldo','salario','paga','nominas'],
   ventas:     ['venta','ventas','vendido','vendi','cliente','encargo','trabajo','freelance'],
-  reembolso:  ['devolucion','devuelto','reembolso','hacienda','irpf','abono','indemnizacion']
+  reembolso:  ['devolucion','devuelto','reembolso','hacienda','irpf','abono','indemnizacion'],
+
+  /* ---------------------------------------------------------------
+     ALQUILERES. Escribe aqui los nombres de tus inquilinos, en
+     minusculas y sin acentos, separados por comas y entre comillas.
+     Ejemplo:  'margarita','jose luis','ana'
+     Los nombres de dos palabras van juntos entre unas mismas comillas.
+     --------------------------------------------------------------- */
+  alquileres: ['alquiler','alquileres','renta','inquilino','inquilinos','mensualidad',
+               'piso','local','garaje','plaza','trastero'
+               /* <-- anade aqui los nombres, precedidos de coma */ ]
 };
 /* Si aparece una de estas, el apunte es un ingreso. */
 const INC_TRIGGERS = ['ingreso','ingresado','ingrese','ingresaron','cobrado','cobre','cobro','recibido',
