@@ -239,6 +239,8 @@ footer button{flex:1;font-size:11.5px;color:var(--muted);padding:11px;border-rad
       </div>
       <label class="lbl" for="fDesc">Concepto</label>
       <input class="field" id="fDesc" autocomplete="off">
+      <label class="lbl" for="fDate">Fecha</label>
+      <input class="field" id="fDate" type="date">
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="cancel">Cancelar</button>
@@ -319,7 +321,12 @@ const NUMS = {
 const FILLER = new Set(['euros','euro','eur','centimos','centimo','con','y','de','del','en','el',
   'la','los','las','por','he','has','han','gastado','gasto','gastos','pagado','pague','me',
   'ha','costado','cuesta','al','a','lo','un','una','unos','unas','para','fue','son','es','€',
-  'ingreso','ingresado','ingrese','ingresaron','cobrado','cobre','cobro','recibido']);
+  'ingreso','ingresado','ingrese','ingresaron','cobrado','cobre','cobro','recibido',
+  'hace','dia','dias','semana','semanas','pasado','pasada']);
+
+const WEEK = { domingo:0, lunes:1, martes:2, miercoles:3, jueves:4, viernes:5, sabado:6 };
+const MES  = { enero:0, febrero:1, marzo:2, abril:3, mayo:4, junio:5, julio:6,
+               agosto:7, septiembre:8, setiembre:8, octubre:9, noviembre:10, diciembre:11 };
 
 const norm = s => s.toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
@@ -372,6 +379,65 @@ function extractAmount(tokens){
   return { amount: null, rest: tokens };
 }
 
+/* Saca la fecha de la frase y devuelve el resto.
+   Entiende: hoy, ayer, anteayer, hace N dias/semanas,
+   los dias de la semana, "el dia 25" y "25 de julio". */
+function extractDate(tokens){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const sin = i => tokens.slice(0,i).concat(tokens.slice(i+1));
+  const menos = n => { const d = new Date(hoy); d.setDate(d.getDate()-n); return d; };
+  let i;
+
+  i = tokens.indexOf('hoy');
+  if (i >= 0) return { date: hoy, rest: sin(i) };
+  i = tokens.indexOf('ayer');
+  if (i >= 0) return { date: menos(1), rest: sin(i) };
+  i = tokens.indexOf('anteayer');
+  if (i >= 0) return { date: menos(2), rest: sin(i) };
+
+  // hace tres dias / hace 2 semanas
+  i = tokens.indexOf('hace');
+  if (i >= 0){
+    const t = tokens[i+1] || '';
+    const r = /^\d+$/.test(t) ? { value:+t, used:1 } : wordsToNumber(tokens.slice(i+1));
+    if (r && r.value > 0){
+      const u = tokens[i+1+r.used];
+      let n = 0;
+      if (u === 'dia' || u === 'dias')       n = r.value;
+      if (u === 'semana' || u === 'semanas') n = r.value * 7;
+      if (n > 0)
+        return { date: menos(n), rest: tokens.slice(0,i).concat(tokens.slice(i+2+r.used)) };
+    }
+  }
+
+  // 25 de julio  |  dia 25
+  for (let k = 0; k < tokens.length; k++){
+    if (!/^\d{1,2}$/.test(tokens[k])) continue;
+    const n = +tokens[k];
+    if (n < 1 || n > 31) continue;
+
+    if (tokens[k+1] === 'de' && MES[tokens[k+2]] !== undefined){
+      const d = new Date(hoy.getFullYear(), MES[tokens[k+2]], n);
+      if (d > hoy) d.setFullYear(d.getFullYear()-1);      // aun no ha llegado: fue el año pasado
+      return { date: d, rest: tokens.slice(0,k).concat(tokens.slice(k+3)) };
+    }
+    if (tokens[k-1] === 'dia'){
+      const d = new Date(hoy.getFullYear(), hoy.getMonth(), n);
+      if (d > hoy) d.setMonth(d.getMonth()-1);            // aun no ha llegado: fue el mes pasado
+      return { date: d, rest: tokens.slice(0,k-1).concat(tokens.slice(k+1)) };
+    }
+  }
+
+  // el lunes, el viernes... siempre hacia atras
+  for (let k = 0; k < tokens.length; k++){
+    const w = WEEK[tokens[k]];
+    if (w === undefined) continue;
+    return { date: menos((hoy.getDay() - w + 7) % 7), rest: sin(k) };
+  }
+
+  return { date: null, rest: tokens };
+}
+
 function matchCat(tokens, table, fallback){
   for (const t of tokens)
     for (const [cat, words] of Object.entries(table))
@@ -384,10 +450,8 @@ function parse(text){
 
   const kind = tokens.some(t => INC_TRIGGERS.includes(t)) ? 'i' : 'g';
 
-  let dayOffset = 0;
-  if (tokens.includes('ayer')){ dayOffset = -1; tokens = tokens.filter(t => t !== 'ayer'); }
-  if (tokens.includes('anteayer')){ dayOffset = -2; tokens = tokens.filter(t => t !== 'anteayer'); }
-  tokens = tokens.filter(t => t !== 'hoy');
+  const fecha = extractDate(tokens);
+  tokens = fecha.rest;
 
   const { amount, rest } = extractAmount(tokens);
   const cat = kind === 'i' ? matchCat(rest, INC_KEYWORDS, 'extra')
@@ -396,7 +460,7 @@ function parse(text){
   const label = kind === 'i' ? INCS[cat].label : CATS[cat].label;
 
   return {
-    amount, cat, kind, dayOffset,
+    amount, cat, kind, date: fecha.date,
     desc: desc ? desc.charAt(0).toUpperCase() + desc.slice(1) : label
   };
 }
@@ -616,8 +680,7 @@ let sheetKind = 'g';
 let kindTouched = false;   // ¿ha tocado el usuario el selector?
 
 function add(p){
-  const d = new Date();
-  d.setDate(d.getDate() + (p.dayOffset || 0));
+  const d = p.date ? new Date(p.date) : new Date();
   const e = { id: Date.now() + '' + Math.floor(Math.random()*1000),
               t: Date.now(), d: iso(d), a: p.amount, c: p.cat, x: p.desc, k: p.kind || 'g' };
   data.push(e);
@@ -680,6 +743,7 @@ function openSheet(id){
     $('fAmt').value  = e.a.toFixed(2).replace('.',',');
     $('fCat').value  = e.c;
     $('fDesc').value = e.x;
+    $('fDate').value = e.d;
   }
   $('sheet').hidden = false;
   setTimeout(() => (editing ? $('fAmt') : $('raw')).focus(), 60);
@@ -711,6 +775,7 @@ $('confirm').onclick = () => {
     if (!isFinite(v) || v <= 0){ $('fAmt').focus(); return; }
     e.a = v; e.k = sheetKind; e.c = $('fCat').value;
     e.x = $('fDesc').value.trim() || info(e).label;
+    if ($('fDate').value) e.d = $('fDate').value;
     persist(); render(); closeSheet();
   } else {
     const p = parse($('raw').value);
